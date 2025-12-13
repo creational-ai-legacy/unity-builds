@@ -1,0 +1,16 @@
+# Unity build folders (exclude everything)
+Amazon/
+Play/
+iOS/
+
+# macOS
+.DS_Store
+
+# Claude Code local settings (user-specific)
+.claude/settings.local.json
+
+# Local properties (contains SDK paths)
+**/local.properties
+
+# Build artifacts
+*.zip

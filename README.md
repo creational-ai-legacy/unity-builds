@@ -1,6 +1,7 @@
 # Unity Build Skills for Claude Code
 
 [![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet?logo=anthropic&logoColor=white)](https://claude.ai/code)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Automate Unity Android Studio export fixes with Claude Code Skills. Drop in your Unity export, trigger the skill, get a store-ready build.
 

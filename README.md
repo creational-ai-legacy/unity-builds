@@ -20,12 +20,13 @@ Unity's Android Studio exports require **12+ manual fixes** before they'll build
 
 1. **Clone this repo**
    ```bash
-   git clone https://github.com/your-repo/unity-build-skills.git
-   cd unity-build-skills
+   git clone https://github.com/creational-ai/unity-builds.git
+   cd unity-builds
    ```
 
 2. **Copy your Unity export**
    ```bash
+   mkdir -p Play
    cp -r /path/to/unity-export Play/myapp-v1.0/
    ```
 
@@ -66,19 +67,25 @@ See `.claude/skills/unity-play-build/references/export-knowledge.md` for the com
 ## Project Structure
 
 ```
-unity-build-skills/
-├── .claude/skills/
-│   └── unity-play-build/           # The skill
-│       ├── SKILL.md                # Workflow definition
-│       └── references/             # Knowledge base
-│           ├── export-knowledge.md # All fixes (single source of truth)
-│           ├── 16kb-research.md    # 16KB compliance details
-│           └── edge-to-edge.md     # Android 15 edge-to-edge
+unity-builds/
+├── .claude/
+│   ├── agents/                      # Agent definitions
+│   │   ├── unity-play-builder.md
+│   │   └── unity-amazon-builder.md
+│   └── skills/
+│       └── unity-play-build/        # Play Store skill
+│           ├── SKILL.md             # Workflow definition
+│           └── references/          # Knowledge base
+│               ├── export-knowledge.md
+│               ├── 16kb-research.md
+│               └── edge-to-edge.md
 ├── scripts/
-│   └── fix_elf_alignment.py        # 16KB ELF alignment tool
-├── Play/docs/                      # Google Play docs (detailed versions)
-├── Amazon/docs/                    # Amazon Appstore docs
-└── iOS/docs/                       # iOS docs (upcoming)
+│   └── fix_elf_alignment.py         # 16KB ELF alignment tool
+├── Play/                            # Your Unity exports go here (gitignored)
+├── Amazon/                          # Amazon exports (gitignored)
+├── iOS/                             # iOS exports (gitignored)
+├── CLAUDE.md                        # Claude Code guidance
+└── README.md
 ```
 
 ## Requirements

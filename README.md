@@ -3,120 +3,137 @@
 ![Claude Skill](https://img.shields.io/badge/Claude-Skill-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Automate Unity Android Studio export fixes with Claude Code Skills. Drop in your Unity export, trigger the skill, get a store-ready build.
+Automate the 16+ fixes Unity Android exports need before they'll build for Google Play.
 
-## What This Does
+* `new Play build at Play/myapp/` — trigger phrase, fresh export to signed AAB
+* 6 parallel subagents fix files end-to-end, orchestrator verifies and builds
+* 16KB page alignment, API 35 compliance, IL2CPP compilation, dependency conflict resolution
+* Up to 4 build retries with automatic error diagnosis from the knowledge base
+* New issues auto-documented to `references/knowledge.md` for future builds
 
-Unity's Android Studio exports require **12+ manual fixes** before they'll build for Google Play. This repo encodes all those fixes into a Claude Code Skill that applies them automatically.
+## Table of Contents
 
-**Before:** Hours of Googling error messages and manually editing gradle files
-**After:** `new Play build at Play/myapp/` → store-ready AAB in minutes
+- [Getting Started](#getting-started)
+- [Available Skills](#available-skills)
+- [What Gets Fixed](#what-gets-fixed)
+- [Build Workflow](#build-workflow)
+- [Build Logs](#build-logs)
+- [Contributing](#contributing)
+- [License](#license)
 
-## Quick Start
+## Getting Started
 
-### Prerequisites
-- [Claude Code](https://claude.ai/code) installed
-- Android Studio with SDK/NDK configured
-- Unity project exported as Android Studio project
+Requires [Claude Code](https://claude.ai/code), Android Studio with SDK 35+, NDK 27.0.12077973, and Java 17+.
 
-### Usage
+```bash
+git clone https://github.com/creational-ai/unity-builds.git
+cd unity-builds
+```
 
-1. **Clone this repo**
-   ```bash
-   git clone https://github.com/creational-ai/unity-builds.git
-   cd unity-builds
-   ```
+Copy your Unity Android Studio export into the `Play/` directory:
 
-2. **Copy your Unity export**
-   ```bash
-   mkdir -p Play
-   cp -r /path/to/unity-export Play/myapp-v1.0/
-   ```
+```bash
+cp -r /path/to/unity-export Play/myapp-v1.0/
+```
 
-3. **Run Claude Code and trigger the skill**
-   ```
-   new Play build at Play/myapp-v1.0/
-   ```
+Open Claude Code and trigger the skill:
 
-4. **Wait for build** (~2-5 minutes)
-   - Skill reads knowledge base
-   - Applies all fixes systematically
-   - Builds AAB for Google Play
-   - Retries up to 4x on failures
-   - Plays sound when complete
+```
+new Play build at Play/myapp-v1.0/
+```
+
+The skill reads the knowledge base, dispatches 6 parallel subagents to fix all files, builds the AAB, and plays a sound when done. First-attempt builds typically complete in ~4-5 minutes.
 
 ## Available Skills
 
 | Skill | Trigger | Status |
 |-------|---------|--------|
-| **Play Store** | `new Play build at Play/<folder>/` | ✅ Ready |
-| **Amazon Appstore** | `new Amazon build at Amazon/<folder>/` | 🚧 Coming |
-| **iOS App Store** | TBD | 🎯 Planned |
+| **Play Store** | `new Play build at Play/<folder>/` | Ready |
+| **Amazon Appstore** | `new Amazon build at Amazon/<folder>/` | Coming Soon |
+| **iOS App Store** | TBD | Planned |
 
 ## What Gets Fixed
 
-The Play Store skill handles:
+| Category | Fixes |
+|----------|-------|
+| **Project Setup** | NDK path cleanup, `buildToolsVersion` removal, AGP 8.11+ |
+| **Java & Build** | Java 17 via Android Studio JBR, `buildConfig` per-module |
+| **Dependencies** | Kotlin/OkHttp JAR excludes, Play Core split migration, Install Referrer 2.2, mediation SDK dedup |
+| **Manifests** | AD_ID permission, Firebase `tools:replace`, AndroidX migration, `provider_paths.xml`, `hardwareAccelerated` conflict |
+| **Packaging** | `noCompress` pattern fix, MultiDex, `useLegacyPackaging true` |
+| **Play Compliance** | 16KB ELF alignment, edge-to-edge opt-out, signing config |
+| **IL2CPP** | Detects missing `BuildIl2Cpp` task and adds it when `Il2CppOutputProject/` exists |
 
-- **NDK Configuration** - Removes hardcoded paths, configures correct version
-- **Java 17** - Sets up Android Studio bundled JBR
-- **API 35 Compliance** - Required for Google Play 2024+
-- **16KB Page Alignment** - Mandatory for Android 15+ (Nov 2025)
-- **Dependency Conflicts** - Kotlin, OkHttp, mediation SDK duplicates
-- **AndroidManifest** - Package attributes, permissions, Firebase config
-- **Build Optimizations** - noCompress patterns, MultiDex, legacy packaging
+Full details in `.claude/skills/unity-play-build/references/knowledge.md`.
 
-See `.claude/skills/unity-play-build/references/export-knowledge.md` for the complete list.
+## Build Workflow
+
+```
+Step 1  Read knowledge base
+Step 2  Fix phase (parallel)
+        ├── 6 background subagents fix files end-to-end
+        └── Orchestrator creates new files (provider_paths, edge-to-edge, 16KB gradle)
+Step 3  Verify subagent work (spot-check critical changes as each completes)
+Step 4  Build AAB (./gradlew clean && ./gradlew bundleRelease)
+Step 5  Iterate on failures (up to 4 attempts, consults knowledge base)
+Step 6  Log timestamps to Play/logs/ and report summary
+Step 7  Sound notification + "Build Complete"
+```
+
+Example output:
+
+```
+Build: hex2.0.0
+AAB: 79MB
+Attempts: 1/4
+
+Configure: 2m 19s
+Build: 2m 12s
+Total: 4m 31s
+```
+
+## Build Logs
+
+Each build writes timestamps to `Play/logs/<build-name>.log`:
+
+```
+Build: hex2.0.0
+Started: 2026-04-01 23:12:28 PDT
+Configured: 2026-04-01 23:14:47 PDT  (2m 19s)
+Build Attempt 1: 2026-04-01 23:16:59 PDT — SUCCESS  (2m 12s)
+Completed: 2026-04-01 23:16:59 PDT
+
+Configure: 2m 19s
+Build: 2m 12s
+Total: 4m 31s
+AAB: 79MB
+```
 
 ## Project Structure
 
 ```
 unity-builds/
 ├── .claude/
-│   ├── agents/                      # Agent definitions
-│   │   ├── unity-play-builder.md
-│   │   └── unity-amazon-builder.md
 │   └── skills/
-│       └── unity-play-build/        # Play Store skill
-│           ├── SKILL.md             # Workflow definition
-│           └── references/          # Knowledge base
-│               ├── export-knowledge.md
-│               ├── 16kb-research.md
-│               └── edge-to-edge.md
+│       └── unity-play-build/           # Play Store skill
+│           ├── SKILL.md                # Workflow definition
+│           └── references/
+│               ├── knowledge.md        # All fixes & solutions
+│               ├── 16kb-research.md    # 16KB compliance research
+│               └── edge-to-edge.md     # Android 15 edge-to-edge
 ├── scripts/
-│   └── fix_elf_alignment.py         # 16KB ELF alignment tool
-├── Play/                            # Your Unity exports go here (gitignored)
-├── Amazon/                          # Amazon exports (gitignored)
-├── iOS/                             # iOS exports (gitignored)
-├── CLAUDE.md                        # Claude Code guidance
+│   └── fix_elf_alignment.py            # 16KB ELF alignment tool
+├── Play/                               # Unity exports (gitignored)
+│   └── logs/                           # Build logs
+├── CLAUDE.md
 └── README.md
 ```
 
-## Requirements
-
-### For Google Play Builds
-- Android Studio with SDK 35+
-- NDK 27.0.12077973
-- Java 17+
-- Unity 2022.3.x export
-
-### For Amazon Builds (Coming Soon)
-- Same as above, plus Amazon-specific configuration
-
-## How Skills Work
-
-Claude Code Skills encode domain expertise:
-
-1. **SKILL.md** defines the trigger and workflow
-2. **references/** contains the knowledge base
-3. When triggered, Claude reads the knowledge, applies fixes, builds, and iterates
-
-The skill also **documents new issues** it encounters, growing the knowledge base over time.
-
 ## Contributing
 
-### Found a new build error?
+### Adding a new build fix
 
-The skill auto-documents issues, but you can also add them manually to `references/export-knowledge.md`:
+The skill auto-documents new issues it encounters. To add one manually, append to `references/knowledge.md`:
 
 ```markdown
 ### [N.N] Issue Name
@@ -127,17 +144,12 @@ The skill auto-documents issues, but you can also add them manually to `referenc
 **Why This Happens**: Root cause
 ```
 
-### Want to add a new platform?
+### Adding a new platform
 
 1. Create `.claude/skills/unity-<platform>-build/`
 2. Add `SKILL.md` with trigger and workflow
 3. Add `references/` with platform-specific knowledge
-4. Submit PR
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-**Built for Unity developers tired of gradle errors.**
+MIT

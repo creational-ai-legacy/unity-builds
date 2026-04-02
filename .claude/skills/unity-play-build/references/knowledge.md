@@ -1,7 +1,7 @@
 # Android Studio Unity Export - Complete Fix Guide
 
 ## Quick Reference
-- **Total Fixes**: 12 comprehensive solutions (consolidated from 19 original fixes)
+- **Total Fixes**: 16 comprehensive solutions
 - **Key Files Modified**: 8+ files across build.gradle, AndroidManifest.xml, and properties
 - **Time to Fix**: ~45-60 minutes (including downloads)
 - **Target API**: 35 (Android 15) - Google Play compliant
@@ -27,6 +27,7 @@
    - [Dependency Version Conflicts Resolution](#dependency-version-conflicts-resolution) - JAR vs Gradle conflicts
    - [Google Play Core Library Migration](#google-play-core-library-migration) - Legacy library conflicts
    - [IronSource Ad Quality SDK Update](#ironsource-ad-quality-sdk-update) - Google Play blocking v7.18.1
+   - [Install Referrer Library Version Mismatch](#install-referrer-library-version-mismatch) - Runtime crash from old AAR
 
 4. **[Android Manifest & Permissions](#4-android-manifest--permissions)**
    - [AD_ID Permission for Android 13+](#ad_id-permission-for-android-13) - Required for advertising
@@ -422,6 +423,28 @@ android {
 - **Unity Version Specific** - Affects Unity 2022.3.62f1+ with dual mediation systems
 - **Resolution** - Must exclude one SDK to prevent namespace conflicts
 
+### 3.5 Install Referrer Library Version Mismatch
+**Problem**: Unity exports bundle `installreferrer-1.0.aar` in `unityLibrary/libs/`, but Unity Ads SDK 4.17.0+ requires Install Referrer 2.1+ which has `getInstallBeginTimestampServerSeconds()`
+
+**Error Message**:
+```
+java.lang.NoSuchMethodError: No virtual method getInstallBeginTimestampServerSeconds()J 
+in class Lcom/android/installreferrer/api/ReferrerDetails;
+```
+
+**File Fixed**: `unityLibrary/build.gradle`
+
+**Solution** — replace the local AAR with the Maven dependency:
+```gradle
+// REMOVE this line:
+// implementation(name: 'installreferrer-1.0', ext:'aar')
+
+// ADD this line:
+implementation 'com.android.installreferrer:installreferrer:2.2'
+```
+
+**Why This Happens**: Unity bundles an old Install Referrer AAR (v1.0) that predates the API methods Unity Ads 4.17.0 expects. The app builds fine but crashes at runtime when Unity Ads tries to call the missing method.
+
 ## 4. Android Manifest & Permissions
 
 ### 4.1 AD_ID Permission for Android 13+
@@ -501,6 +524,94 @@ Unity exports this line WITHOUT the `tools:replace` attribute. You must ADD the 
 
 **Why This Happens**: Newer Firebase SDK has different exported service settings than Unity's bundled version, requiring explicit conflict resolution via `tools:replace`.
 
+### 4.4 Manifest Property removeAll xmlns Conflict
+**Problem**: Unity 2022.3.62f3 exports a `<property>` tag with a redundant `xmlns:tools` declaration that the manifest merger rejects
+
+**Error Message**:
+```
+Element property at AndroidManifest.xml annotated with 'tools:node="removeAll"' cannot have other attributes : xmlns:tools
+```
+
+**File Fixed**: `unityLibrary/src/main/AndroidManifest.xml`
+
+**What Unity exports (BROKEN)**:
+```xml
+<property tools:node="removeAll" xmlns:tools="http://schemas.android.com/tools" />
+```
+
+**Solution** — remove the redundant `xmlns:tools` (already declared on `<manifest>`):
+```xml
+<property tools:node="removeAll" />
+```
+
+**Why This Happens**: Unity duplicates the `xmlns:tools` namespace declaration on the `<property>` element. AGP 8.11+ manifest merger treats extra attributes on `tools:node="removeAll"` elements as errors.
+
+### 4.5 Missing provider_paths.xml Resource
+**Problem**: Unity exports AndroidManifest with a FileProvider referencing `@xml/provider_paths` but doesn't create the resource file
+
+**Error Message**:
+```
+AAPT: error: resource xml/provider_paths (aka com.package.name:xml/provider_paths) not found
+```
+
+**File Fixed**: Create `unityLibrary/src/main/res/xml/provider_paths.xml`
+
+**Solution**:
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-path name="external_files" path="." />
+    <files-path name="internal_files" path="." />
+    <cache-path name="cache_files" path="." />
+</paths>
+```
+
+**Why This Happens**: The FileProvider declaration in the manifest expects a paths resource that Unity doesn't include in the export.
+
+### 4.6 Launcher Activity hardwareAccelerated Conflict
+**Problem**: Launcher manifest activity declares `hardwareAccelerated="true"` but unityLibrary declares `hardwareAccelerated="false"`, causing manifest merger failure
+
+**Error Message**:
+```
+Suggestion: add 'tools:replace="android:hardwareAccelerated"' to <activity> element to override
+```
+
+**File Fixed**: `launcher/src/main/AndroidManifest.xml`
+
+**Solution** — add `tools:replace` to the activity in launcher manifest:
+```xml
+<activity android:name="com.unity3d.player.UnityPlayerActivity"
+          android:hardwareAccelerated="true"
+          android:exported="true"
+          tools:replace="android:hardwareAccelerated">
+```
+
+**Why This Happens**: The launcher and unityLibrary manifests declare different values for `hardwareAccelerated` on the same activity, and the manifest merger requires an explicit override.
+
+### 4.7 Launcher flatDir AAR Resolution
+**Problem**: Launcher module cannot resolve AAR dependencies from unityLibrary/libs/ when `dependencyResolutionManagement` is removed from settings.gradle
+
+**Error Message**:
+```
+Could not find :installreferrer-1.0:
+Could not find :PaperPlaneToolsAlert:
+Could not find :androidgoodieslib-release:
+Could not find :firebase-messaging-cpp:
+```
+
+**File Fixed**: `launcher/build.gradle`
+
+**Solution** — add a `repositories` block to launcher/build.gradle:
+```gradle
+repositories {
+    flatDir {
+        dirs project(':unityLibrary').file('libs')
+    }
+}
+```
+
+**Why This Happens**: The `allprojects` block in unityLibrary/build.gradle sets `flatDir { dirs 'libs' }` which resolves relative to each module's own directory. The launcher module's `libs/` doesn't contain the AARs — they live in `unityLibrary/libs/`. An explicit cross-module flatDir reference is needed.
+
 ## 5. Build Optimization & Packaging
 
 ### 5.1 Resource Pattern Fix (APK/AAB Builds)
@@ -527,7 +638,7 @@ androidResources {
 
 packagingOptions {
     jniLibs {
-        useLegacyPackaging false  // Required for AAB builds - was true
+        useLegacyPackaging true  // Required for Unity IL2CPP - extracts native libs to disk
         keepDebugSymbols += ['*/armeabi-v7a/*.so', '*/arm64-v8a/*.so']
     }
 }
@@ -537,9 +648,7 @@ packagingOptions {
 - **APK builds**: Tolerate malformed patterns (with warnings)
 - **AAB builds**: Fail completely on malformed patterns - require exact syntax
 
-**Why Both Changes Required**:
-- **noCompress fix**: Malformed pattern prevents AAB packaging completion
-- **useLegacyPackaging fix**: Must be `false` for AAB compatibility
+**useLegacyPackaging**: Must be `true` for Unity IL2CPP apps. Setting to `false` causes `libil2cpp.so` to not be extracted, resulting in a runtime crash (`dlopen failed: library "libil2cpp.so" not found`).
 
 ### 5.2 MultiDex Configuration
 **Problem**: App crashes immediately on launch with ClassNotFoundException

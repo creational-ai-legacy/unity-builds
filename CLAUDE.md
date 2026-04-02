@@ -38,7 +38,7 @@ Unity Builds/
 │       └── unity-play-build/        # Play Store skill
 │           ├── SKILL.md             # Skill definition
 │           └── references/          # Knowledge base
-│               ├── export-knowledge.md   # All fixes & solutions
+│               ├── knowledge.md   # All fixes & solutions
 │               ├── 16kb-research.md      # 16KB compliance
 │               └── edge-to-edge.md       # Android 15 requirements
 ├── scripts/

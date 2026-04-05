@@ -1,7 +1,7 @@
 # Android Studio Unity Export - Complete Fix Guide
 
 ## Quick Reference
-- **Total Fixes**: 16 comprehensive solutions
+- **Total Fixes**: 20 comprehensive solutions
 - **Key Files Modified**: 8+ files across build.gradle, AndroidManifest.xml, and properties
 - **Time to Fix**: ~45-60 minutes (including downloads)
 - **Target API**: 35 (Android 15) - Google Play compliant
@@ -18,6 +18,7 @@
    - [API Level & Namespace Configuration](#api-level--namespace-configuration) - Unity namespace missing for API 35
    - [NDK Installation & Configuration](#ndk-installation--configuration) - Unity hardcoded NDK paths
    - [Android Gradle Plugin & Build Tools Update](#android-gradle-plugin--build-tools-update) - Outdated AGP version
+   - [Missing IL2CPP Build Task](#missing-il2cpp-build-task-buildil2cpptask) - Runtime crash, libil2cpp.so not found
 
 2. **[Java & Build Configuration](#2-java--build-configuration)**
    - [Java Version Configuration](#java-version-configuration) - AGP 8.11.1+ requires Java 17+
@@ -33,6 +34,13 @@
    - [AD_ID Permission for Android 13+](#ad_id-permission-for-android-13) - Required for advertising
    - [Unity Activity Configuration](#unity-activity-configuration) - Missing Unity activity
    - [Firebase Manifest Conflicts](#firebase-manifest-conflicts) - Service exported conflicts
+   - [Manifest Property removeAll xmlns Conflict](#manifest-property-removeall-xmlns-conflict) - Redundant xmlns declaration
+   - [Legacy Support Library FileProvider Class](#legacy-support-library-fileprovider-class) - Runtime crash from old class
+   - [Missing provider_paths.xml Resource](#missing-provider_pathsxml-resource) - FileProvider resource missing
+   - [Launcher Activity hardwareAccelerated Conflict](#launcher-activity-hardwareaccelerated-conflict) - Manifest merger failure
+   - [Launcher flatDir AAR Resolution](#launcher-flatdir-aar-resolution) - Cross-module AAR resolution
+   - [Application Label Manifest Conflict](#application-label-manifest-conflict) - Plugin label conflicts
+   - [Firebase MessagingUnityPlayerActivity Duplicate Launcher](#firebase-messagingunityplayeractivity-duplicate-launcher) - Duplicate app icon
 
 5. **[Build Optimization & Packaging](#5-build-optimization--packaging)**
    - [Resource Pattern Fix (APK/AAB Builds)](#resource-pattern-fix-apkaab-builds) - Malformed noCompress patterns
@@ -166,6 +174,90 @@ android {
 ```
 
 **Benefits**: Enables modern Android 15 features, better namespace handling, and Google Play Store compliance.
+
+### 1.4 Missing IL2CPP Build Task (BuildIl2CppTask)
+**Problem**: Unity exports may include the IL2CPP source files but omit the Gradle build task that compiles them into `libil2cpp.so`. The app builds without errors but crashes at runtime.
+
+**Error Message**:
+```
+JNI FatalError called: Unable to load library: libil2cpp.so [dlopen failed: library "libil2cpp.so" not found]
+```
+
+**How to Detect**: Check for ALL THREE conditions:
+1. `Il2CppOutputProject/` directory exists in `unityLibrary/src/main/` (IL2CPP source is present)
+2. `BuildIl2CppTask` does NOT exist in `unityLibrary/build.gradle`
+3. `libil2cpp.so` does NOT exist in `unityLibrary/src/main/jniLibs/`
+
+If the source exists but the task and library are missing, the build task must be added.
+
+**File Fixed**: `unityLibrary/build.gradle`
+
+**Solution** — append these three blocks after the last closing `}` in the file:
+
+```gradle
+def getSdkDir() {
+    Properties local = new Properties()
+    local.load(new FileInputStream("${rootDir}/local.properties"))
+    return local.getProperty('sdk.dir')
+}
+def BuildIl2Cpp(String workingDir, String configuration, String architecture, String abi, String[] staticLibraries) {
+    def commandLineArgs = []
+    commandLineArgs.add("--compile-cpp")
+    commandLineArgs.add("--platform=Android")
+    commandLineArgs.add("--architecture=" + architecture)
+    commandLineArgs.add("--outputpath=" + workingDir + "/src/main/jniLibs/" + abi + "/libil2cpp.so")
+    commandLineArgs.add("--baselib-directory=" + workingDir + "/src/main/jniStaticLibs/" + abi)
+    commandLineArgs.add("--incremental-g-c-time-slice=3")
+    commandLineArgs.add("--configuration=" + configuration)
+    commandLineArgs.add("--dotnetprofile=unityaot-linux")
+    commandLineArgs.add("--profiler-report")
+    commandLineArgs.add("--profiler-output-file=" + workingDir + "/build/il2cpp_"+ abi + "_" + configuration + "/il2cpp_conv.traceevents")
+    commandLineArgs.add("--print-command-line")
+    commandLineArgs.add("--data-folder=" + workingDir + "/src/main/Il2CppOutputProject/Source/il2cppOutput/data")
+    commandLineArgs.add("--generatedcppdir=" + workingDir + "/src/main/Il2CppOutputProject/Source/il2cppOutput")
+    commandLineArgs.add("--cachedirectory=" + workingDir + "/build/il2cpp_"+ abi + "_" + configuration + "/il2cpp_cache")
+    commandLineArgs.add("--tool-chain-path=" + android.ndkDirectory)
+    staticLibraries.eachWithIndex {
+        fileName, i->
+        commandLineArgs.add("--additional-libraries=" + workingDir + "/src/main/jniStaticLibs/" + abi + "/" + fileName)
+    }
+    def executableExtension = ""
+    if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+        executableExtension = ".exe"
+        commandLineArgs = commandLineArgs*.replace('\"', '\\\"')
+    }
+    exec {
+        executable workingDir + "/src/main/Il2CppOutputProject/IL2CPP/build/deploy/il2cpp" + executableExtension
+        args commandLineArgs
+        environment "ANDROID_SDK_ROOT", getSdkDir()
+    }
+    delete workingDir + "/src/main/jniLibs/" + abi + "/libil2cpp.sym.so"
+    ant.move(file: workingDir + "/src/main/jniLibs/" + abi + "/libil2cpp.dbg.so", tofile: workingDir + "/symbols/" + abi + "/libil2cpp.so")
+}
+android {
+    task BuildIl2CppTask {
+        doLast {
+            BuildIl2Cpp(projectDir.toString().replaceAll('\\\\', '/'), 'Release', 'armv7', 'armeabi-v7a', [  ] as String[]);
+            BuildIl2Cpp(projectDir.toString().replaceAll('\\\\', '/'), 'Release', 'arm64', 'arm64-v8a', [  ] as String[]);
+        }
+    }
+    afterEvaluate {
+        if (project(':unityLibrary').tasks.findByName('mergeDebugJniLibFolders'))
+        project(':unityLibrary').mergeDebugJniLibFolders.dependsOn BuildIl2CppTask
+        if (project(':unityLibrary').tasks.findByName('mergeReleaseJniLibFolders'))
+        project(':unityLibrary').mergeReleaseJniLibFolders.dependsOn BuildIl2CppTask
+    }
+}
+```
+
+**Why This Happens**: Unknown. Unity exports the IL2CPP source files (`Il2CppOutputProject/` with compiler, C++ source, and static libs) but omits the Gradle task that compiles them. The app builds without errors because no compilation step fails — the library simply never gets created. First observed in Unity 2022.3.62f3 exports. A working reference (hex2.0.0b126) from the same Unity version had the task, so the issue is intermittent or configuration-dependent.
+
+**Note**: The build task code above was captured from a known-working export (hex2.0.0b126). IL2CPP compilation adds ~2-5 minutes to build time.
+
+**Impact**:
+- **Critical** — App crashes immediately on launch
+- **Build completes successfully** — No build errors, making this hard to catch
+- **IL2CPP compilation adds ~2-5 minutes** to build time when the task is present
 
 ## 2. Java & Build Configuration
 
@@ -546,7 +638,28 @@ Element property at AndroidManifest.xml annotated with 'tools:node="removeAll"' 
 
 **Why This Happens**: Unity duplicates the `xmlns:tools` namespace declaration on the `<property>` element. AGP 8.11+ manifest merger treats extra attributes on `tools:node="removeAll"` elements as errors.
 
-### 4.5 Missing provider_paths.xml Resource
+### 4.5 Legacy Support Library FileProvider Class
+**Problem**: Unity exports reference old `android.support.v4.content.FileProvider` class which doesn't exist in AndroidX builds, causing a runtime crash on app startup
+
+**Error Message**:
+```
+java.lang.RuntimeException: Unable to get provider android.support.v4.content.FileProvider: java.lang.ClassNotFoundException: Didn't find class "android.support.v4.content.FileProvider"
+```
+
+**File Fixed**: `unityLibrary/src/main/AndroidManifest.xml`
+
+**Solution** — replace the old support library class with the AndroidX equivalent:
+```xml
+<!-- BEFORE (crashes at runtime): -->
+<provider android:name="android.support.v4.content.FileProvider" ... >
+
+<!-- AFTER (correct AndroidX class): -->
+<provider android:name="androidx.core.content.FileProvider" ... >
+```
+
+**Why This Happens**: Unity 2022.3 exports still reference the old Android Support Library `FileProvider` class. Modern Android builds use AndroidX, where the class was relocated to `androidx.core.content.FileProvider`. The app compiles fine but crashes at runtime when Android tries to instantiate the provider.
+
+### 4.6 Missing provider_paths.xml Resource
 **Problem**: Unity exports AndroidManifest with a FileProvider referencing `@xml/provider_paths` but doesn't create the resource file
 
 **Error Message**:
@@ -568,7 +681,7 @@ AAPT: error: resource xml/provider_paths (aka com.package.name:xml/provider_path
 
 **Why This Happens**: The FileProvider declaration in the manifest expects a paths resource that Unity doesn't include in the export.
 
-### 4.6 Launcher Activity hardwareAccelerated Conflict
+### 4.7 Launcher Activity hardwareAccelerated Conflict
 **Problem**: Launcher manifest activity declares `hardwareAccelerated="true"` but unityLibrary declares `hardwareAccelerated="false"`, causing manifest merger failure
 
 **Error Message**:
@@ -588,20 +701,23 @@ Suggestion: add 'tools:replace="android:hardwareAccelerated"' to <activity> elem
 
 **Why This Happens**: The launcher and unityLibrary manifests declare different values for `hardwareAccelerated` on the same activity, and the manifest merger requires an explicit override.
 
-### 4.7 Launcher flatDir AAR Resolution
-**Problem**: Launcher module cannot resolve AAR dependencies from unityLibrary/libs/ when `dependencyResolutionManagement` is removed from settings.gradle
+### 4.8 Repository Configuration & flatDir AAR Resolution
+**Problem**: Dependency resolution fails — either Maven dependencies or local AARs can't be found. Unity exports use two different Gradle structures and the fix depends on which variant is present.
 
-**Error Message**:
+**How to Detect**: Check `unityLibrary/build.gradle` for an `allprojects { repositories { ... } }` block.
+
+---
+
+**Variant A — Export has `allprojects` repos in `unityLibrary/build.gradle`**
+
+This older export style defines all repositories (google, mavenCentral, flatDir, maven) at the project level via `allprojects`. The `dependencyResolutionManagement` block in `settings.gradle` conflicts with these project-level repos.
+
+**Error Message** (Variant A):
 ```
-Could not find :installreferrer-1.0:
-Could not find :PaperPlaneToolsAlert:
-Could not find :androidgoodieslib-release:
-Could not find :firebase-messaging-cpp:
+Could not find com.google.firebase:firebase-app-unity:13.5.0
 ```
 
-**File Fixed**: `launcher/build.gradle`
-
-**Solution** — add a `repositories` block to launcher/build.gradle:
+**Fix**: Remove the entire `dependencyResolutionManagement { ... }` block from `settings.gradle`. The project-level repos handle everything. Then add a cross-module flatDir to `launcher/build.gradle`:
 ```gradle
 repositories {
     flatDir {
@@ -610,7 +726,133 @@ repositories {
 }
 ```
 
-**Why This Happens**: The `allprojects` block in unityLibrary/build.gradle sets `flatDir { dirs 'libs' }` which resolves relative to each module's own directory. The launcher module's `libs/` doesn't contain the AARs — they live in `unityLibrary/libs/`. An explicit cross-module flatDir reference is needed.
+---
+
+**Variant B — Export has NO `allprojects` repos (relies on `dependencyResolutionManagement`)**
+
+This newer export style has NO repository declarations in module build.gradle files — all repos come from `dependencyResolutionManagement` in `settings.gradle`. Removing it entirely causes all dependency resolution to fail.
+
+**Error Message** (Variant B):
+```
+Could not find androidx.multidex:multidex:2.0.1
+Could not find com.google.firebase:firebase-analytics-unity:13.5.0
+```
+
+**Fix**: Keep `dependencyResolutionManagement` in `settings.gradle` but reconfigure it:
+1. Use `PREFER_SETTINGS` mode
+2. Add `google()` and `mavenCentral()`
+3. Add the Unity-generated Firebase local Maven repo (path found in the original export's `allprojects` block or Unity project's `Assets/GeneratedLocalRepo/Firebase/m2repository`)
+4. Add `flatDir` using `${rootDir}/unityLibrary/libs` (NOT `project(':unityLibrary')` — project refs are not available at settings evaluation time)
+
+```gradle
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url "file:////<path-to-unity-project>/Assets/GeneratedLocalRepo/Firebase/m2repository"
+        }
+        flatDir {
+            dirs "${rootDir}/unityLibrary/libs"
+        }
+    }
+}
+```
+
+Still add the cross-module flatDir to `launcher/build.gradle` (same as Variant A).
+
+---
+
+**Why This Happens**: Unity's Android Resolver generates different Gradle structures depending on export settings. Older exports use `allprojects` repos at the module level; newer exports centralize repos in `settings.gradle` via `dependencyResolutionManagement`. Firebase Unity artifacts (`firebase-*-unity`) are not published to public Maven repos — they live in a local Maven repository generated by Unity inside the Unity project's `Assets/GeneratedLocalRepo/` directory.
+
+### 4.9 Application Label Manifest Conflict
+**Problem**: Manifest merger fails because a library module (e.g., PaperPlaneToolsAlert) declares its own `android:label` on `<application>`, conflicting with the launcher's label.
+
+**Error Message**:
+```
+Manifest merger failed : Attribute application@label value=(@string/app_name) from AndroidManifest.xml
+is also present at [:PaperPlaneToolsAlert:] AndroidManifest.xml value=(My plugin label).
+Suggestion: add 'tools:replace="android:label"' to <application> element
+```
+
+**How to Detect**: Check if any library module declares `android:label` on its `<application>` element:
+```bash
+grep -r 'android:label' */src/main/AndroidManifest.xml
+```
+If multiple modules declare `android:label`, the conflict will occur.
+
+---
+
+**Variant A — Conflict exists (library declares its own label)**
+
+A bundled plugin (PaperPlaneToolsAlert, or similar) includes an `android:label` in its manifest that conflicts with the launcher's `@string/app_name`.
+
+**Fix**: Add `tools:replace="android:label"` to the `<application>` element in `launcher/src/main/AndroidManifest.xml`:
+```xml
+<application android:label="@string/app_name"
+             android:icon="@mipmap/app_icon"
+             tools:replace="android:label">
+```
+
+---
+
+**Variant B — No conflict (no library declares a label)**
+
+No library modules declare `android:label`. No fix needed — adding `tools:replace` is harmless but unnecessary.
+
+---
+
+**File Fixed**: `launcher/src/main/AndroidManifest.xml`
+
+**Why This Happens**: Some Unity plugins bundle their own AndroidManifest.xml with an `<application android:label="...">` declaration. The manifest merger requires all modules to agree on attribute values, or the launcher must explicitly declare which value wins via `tools:replace`.
+
+### 4.10 Firebase MessagingUnityPlayerActivity Duplicate Launcher
+**Problem**: App shows two icons in the Android app drawer/home screen. Firebase Messaging Unity plugin declares `MessagingUnityPlayerActivity` with a LAUNCHER intent-filter, creating a second launchable entry.
+
+**User-Visible Symptom**: Two identical app icons appear on the device home screen and app drawer after install.
+
+**How to Detect**: Search `unityLibrary/src/main/AndroidManifest.xml` for `MessagingUnityPlayerActivity`:
+```bash
+grep 'MessagingUnityPlayerActivity' unityLibrary/src/main/AndroidManifest.xml
+```
+Then check if it has a LAUNCHER category:
+```bash
+# Look for LAUNCHER in the lines following MessagingUnityPlayerActivity
+```
+
+**File Fixed**: `unityLibrary/src/main/AndroidManifest.xml`
+
+**What Unity exports (BROKEN — creates duplicate icon)**:
+```xml
+<activity android:name="com.google.firebase.MessagingUnityPlayerActivity" ...>
+  <intent-filter>
+    <category android:name="android.intent.category.LAUNCHER" />
+    <action android:name="android.intent.action.MAIN" />
+  </intent-filter>
+  <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+</activity>
+```
+
+**Solution** — change LAUNCHER to DEFAULT:
+```xml
+<activity android:name="com.google.firebase.MessagingUnityPlayerActivity" ...>
+  <intent-filter>
+    <category android:name="android.intent.category.DEFAULT" />
+    <action android:name="android.intent.action.MAIN" />
+  </intent-filter>
+  <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+</activity>
+```
+
+**Why This Happens**: The Firebase Messaging Unity plugin copies the main activity's LAUNCHER intent-filter into `MessagingUnityPlayerActivity`, which is meant to handle notification tap-through. It needs `MAIN` action for notification handling but should NOT appear in the app drawer. Changing to `DEFAULT` keeps notification functionality working while hiding it from the launcher.
+
+**Verification**: After building, check the merged manifest at `launcher/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml` — grep for `LAUNCHER` should return exactly one result (the main `UnityPlayerActivity`).
+
+**Impact**:
+- **High** — Visible to all users, causes confusion
+- **Affects** — All Unity exports with Firebase Messaging plugin
+- **Device-confirmed** — Fix verified on physical device (2026-04-04)
 
 ## 5. Build Optimization & Packaging
 

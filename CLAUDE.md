@@ -12,7 +12,7 @@ This repository provides **Claude Code Skills** that automate fixing and buildin
 **Trigger:** `new Play build at Play/<folder>/`
 
 Transforms Unity Android exports into Google Play Store ready AAB builds:
-- Applies 24 systematic fixes automatically
+- Applies 26 systematic fixes automatically
 - Handles API 35 compliance, NDK configuration, 16KB alignment
 - Builds AAB format for Google Play submission
 - Two execution modes: sequential (`/unity-play-build-solo`) or parallel (`/unity-play-build-parallel`)

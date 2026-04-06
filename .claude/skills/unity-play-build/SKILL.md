@@ -25,7 +25,7 @@ All `references/` paths are relative to `<skill_dir>`:
 | `references/edge-to-edge.md` | Android 15 edge-to-edge enforcement details |
 | `references/16kb-research.md` | Google Play 16KB page size compliance research |
 | `references/mainagent-guide.md` | Sequential build approach (main agent does everything) |
-| `references/subagent-guide.md` | Parallel build approach (6 subagents + orchestrator) |
+| `references/subagent-guide.md` | Parallel build approach (5 subagents + orchestrator) |
 | `<project_root>/scripts/fix_elf_alignment.py` | Python script for ELF 16KB alignment |
 
 ## Execution Modes
@@ -45,19 +45,27 @@ Follow the selected guide exactly. Both guides share the same logging, reporting
 
 ## Build Log Format
 
-All build logs are saved to `Play/logs/<build-name>.log`.
+Logs are **one file per version**, append-only. Extract the version from `<folder>` (e.g., `hex2.0.0b128` → version `hex2.0.0`). Log file: `Play/logs/<version>.log`.
+
+Each build appends a new entry separated by `===`. Never overwrite — just append.
+
+```bash
+# Start timer (append, don't overwrite)
+mkdir -p Play/logs
+echo "" >> Play/logs/<version>.log
+echo "===" >> Play/logs/<version>.log
+echo "Build: <build-name> | Folder: <folder>" >> Play/logs/<version>.log
+echo "Started: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<version>.log
+```
 
 ```
-Build: <build-name>
+===
+Build: <build-name> | Folder: <folder>
 Started: YYYY-MM-DD HH:MM:SS TZ
 Configured: YYYY-MM-DD HH:MM:SS TZ
 Build Attempt N: YYYY-MM-DD HH:MM:SS TZ — SUCCESS/FAILED (error summary)
 Completed: YYYY-MM-DD HH:MM:SS TZ
-
-Configure: Xm Xs
-Build: Xm Xs
-Total: Xm Xs
-AAB: <size>MB
+Configure: Xm Xs | Build: Xm Xs | Total: Xm Xs | AAB: <size>MB
 ```
 
 ## Report to User

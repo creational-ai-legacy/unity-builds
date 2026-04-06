@@ -1,7 +1,7 @@
 # Android Studio Unity Export - Complete Fix Guide
 
 ## Quick Reference
-- **Total Fixes**: 20 comprehensive solutions
+- **Total Fixes**: 26 comprehensive solutions
 - **Key Files Modified**: 8+ files across build.gradle, AndroidManifest.xml, and properties
 - **Time to Fix**: ~45-60 minutes (including downloads)
 - **Target API**: 35 (Android 15) - Google Play compliant
@@ -28,6 +28,7 @@
    - [Dependency Version Conflicts Resolution](#dependency-version-conflicts-resolution) - JAR vs Gradle conflicts
    - [Google Play Core Library Migration](#google-play-core-library-migration) - Legacy library conflicts
    - [IronSource Ad Quality SDK Update](#ironsource-ad-quality-sdk-update) - Google Play blocking v7.18.1
+   - [Unity Mediation SDK Namespace Conflicts](#unity-mediation-sdk-namespace-conflicts) - Duplicate mediation classes
    - [Install Referrer Library Version Mismatch](#install-referrer-library-version-mismatch) - Runtime crash from old AAR
 
 4. **[Android Manifest & Permissions](#4-android-manifest--permissions)**

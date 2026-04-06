@@ -6,10 +6,14 @@ The main agent reads the knowledge base, then assesses and fixes each file one a
 
 ### 1. Start Timer
 
+Extract the version from `<folder>` (e.g., `hex2.0.0b128` → `hex2.0.0`). Log file: `Play/logs/<version>.log`. Append, never overwrite.
+
 ```bash
 mkdir -p Play/logs
-echo "Build: <build-name>" > Play/logs/<build-name>.log
-echo "Started: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<build-name>.log
+echo "" >> Play/logs/<version>.log
+echo "===" >> Play/logs/<version>.log
+echo "Build: <build-name> | Folder: <folder>" >> Play/logs/<version>.log
+echo "Started: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<version>.log
 ```
 
 ### 2. Read Knowledge
@@ -70,7 +74,7 @@ Quick grep checks on critical items before building:
 
 **Timestamp "Configured"**:
 ```bash
-echo "Configured: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<build-name>.log
+echo "Configured: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<version>.log
 ```
 
 Build **AAB only** from `<folder>`:

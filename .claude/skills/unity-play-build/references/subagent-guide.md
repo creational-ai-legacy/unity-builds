@@ -6,10 +6,14 @@
 
 ### 1. Start Timer
 
+Extract the version from `<folder>` (e.g., `hex2.0.0b128` → `hex2.0.0`). Log file: `Play/logs/<version>.log`. Append, never overwrite.
+
 ```bash
 mkdir -p Play/logs
-echo "Build: <build-name>" > Play/logs/<build-name>.log
-echo "Started: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<build-name>.log
+echo "" >> Play/logs/<version>.log
+echo "===" >> Play/logs/<version>.log
+echo "Build: <build-name> | Folder: <folder>" >> Play/logs/<version>.log
+echo "Started: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<version>.log
 ```
 
 ### 2. Fix Phase (6 Parallel Tasks)
@@ -78,7 +82,7 @@ As each subagent completes, **spot-check its work** — read key lines to confir
 | B | `VERSION_17`, `installreferrer:2.2`, `buildConfig = false` |
 | C | `apply from: '../fix_16kb_alignment.gradle'`, `VERSION_17`, `multiDexEnabled true` |
 | D | `removeAll` no xmlns, `AD_ID`, `MessagingUnityPlayerActivity` has `DEFAULT` not `LAUNCHER` |
-| E | Activity declaration present, `tools:replace="android:hardwareAccelerated"` |
+| E | Activity declaration present, `tools:replace="android:hardwareAccelerated"`, `tools:replace="android:label"` on `<application>` |
 
 If a subagent missed something, fix it immediately. Don't wait for all subagents to verify — verify as they arrive.
 
@@ -86,7 +90,7 @@ If a subagent missed something, fix it immediately. Don't wait for all subagents
 
 **Timestamp "Configured"**:
 ```bash
-echo "Configured: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<build-name>.log
+echo "Configured: $(date '+%Y-%m-%d %H:%M:%S %Z')" >> Play/logs/<version>.log
 ```
 
 Once all 5 subagents have completed and been verified, build **AAB only** from `<folder>`:

@@ -35,10 +35,20 @@ For each file group below: **read the file, compare against the knowledge sectio
 | 2 | `settings.gradle` | 4.8 (variant detection — check if `allprojects` exists in unityLibrary/build.gradle first) |
 | 3 | `unityLibrary/build.gradle` | 1.1-1.4, 2.1-2.2, 3.1-3.5, 5.1 |
 | 4 | `launcher/build.gradle` | 2.1-2.2, 4.8 (flatDir), 5.1-5.2, 6.1-6.2 |
-| 5 | `unityLibrary/src/main/AndroidManifest.xml` | 4.1, 4.3-4.5, 4.10 (duplicate launcher) |
+| 5 | `unityLibrary/src/main/AndroidManifest.xml` | 4.1, 4.3-4.5, 4.10, 4.11 (remove launcher-only resources) |
 | 6 | `launcher/src/main/AndroidManifest.xml` | 4.2, 4.7, 4.9 (variant detection — grep library module manifests for `android:label` first) |
 
-### 4. Create New Files
+### 4. Fix Android Studio Run Configuration (Knowledge 4.12)
+
+Read `<folder>/.idea/workspace.xml`. Find the `<method v="2" />` tag inside the `<configuration name="launcher"` run config. If it's empty (self-closing), replace with:
+```xml
+<method v="2">
+  <option name="Android.Gradle.BeforeRunTask" enabled="true" />
+</method>
+```
+If it already contains `Android.Gradle.BeforeRunTask`, leave it alone.
+
+### 5. Create New Files
 
 After fixing existing files, create these new files:
 
@@ -47,7 +57,7 @@ After fixing existing files, create these new files:
 - **Create** `<folder>/unityLibrary/src/main/res/xml/provider_paths.xml` (knowledge 4.6)
 - **Create** `<folder>/unityLibrary/src/main/res/values-v35/styles.xml` — edge-to-edge opt-out (inherit splash screen config from `values-v31/styles.xml`)
 
-### 5. Check IL2CPP Build Task (Knowledge 1.4)
+### 6. Check IL2CPP Build Task (Knowledge 1.4)
 
 This is critical — detect and fix missing IL2CPP compilation:
 
@@ -56,7 +66,7 @@ This is critical — detect and fix missing IL2CPP compilation:
 3. If `Il2CppOutputProject/` exists but `BuildIl2CppTask` is missing:
    - Append the `getSdkDir()`, `BuildIl2Cpp()`, and `BuildIl2CppTask` block from knowledge 1.4 to the end of `unityLibrary/build.gradle`
 
-### 6. Verify
+### 7. Verify
 
 Quick grep checks on critical items before building:
 
@@ -70,7 +80,7 @@ Quick grep checks on critical items before building:
 | 16KB | `fix_16kb_alignment` in `launcher/build.gradle` |
 | IL2CPP | `BuildIl2CppTask` in `unityLibrary/build.gradle` (if Il2CppOutputProject exists) |
 
-### 7. Build
+### 8. Build
 
 **Timestamp "Configured"**:
 ```bash
@@ -84,7 +94,7 @@ cd <folder>
 ./gradlew bundleRelease
 ```
 
-### 8. Iterate (Up to 4 Attempts)
+### 9. Iterate (Up to 4 Attempts)
 
 For each build failure:
 1. **Analyze** — Read full build error output
@@ -93,10 +103,10 @@ For each build failure:
 4. **Rebuild** — Try again
 5. **Track** — Log attempt and outcome
 
-### 9. Log & Report
+### 10. Log & Report
 
 Follow the logging and reporting format defined in SKILL.md.
 
-### 10. Notify
+### 11. Notify
 
 Follow the notification format defined in SKILL.md.

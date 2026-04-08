@@ -30,9 +30,9 @@ There are **6 workers** — 5 subagents and you (the orchestrator). Every worker
 | 1 | Subagent A | `gradle.properties`, `local.properties` | 1.2 NDK, 2.1 Java |
 | 2 | Subagent B | `unityLibrary/build.gradle` | 1.1-1.3, 2.1-2.2, 3.1-3.5, 5.1 |
 | 3 | Subagent C | `launcher/build.gradle` | 2.1-2.2, 4.8 (flatDir only), 5.1-5.2, 6.1-6.2 |
-| 4 | Subagent D | `unityLibrary/src/main/AndroidManifest.xml` | 4.1, 4.3-4.5, 4.10 (duplicate launcher fix) |
+| 4 | Subagent D | `unityLibrary/src/main/AndroidManifest.xml` | 4.1, 4.3-4.5, 4.10, 4.11 (remove launcher-only resources) |
 | 5 | Subagent E | `launcher/src/main/AndroidManifest.xml` | 4.2, 4.7 |
-| 6 | **Orchestrator (you)** | `settings.gradle` + new files + IL2CPP build task if missing + launcher manifest label fix if needed | 4.8 (variant detection), 4.9 (variant detection), 1.4, 4.6, 6.1, edge-to-edge |
+| 6 | **Orchestrator (you)** | `settings.gradle` + `.idea/workspace.xml` + new files + IL2CPP build task if missing + launcher manifest label fix if needed | 4.8 (variant detection), 4.9 (variant detection), 4.12 (AS before-launch fix), 1.4, 4.6, 6.1, edge-to-edge |
 
 ### Subagent Prompt Requirements
 
@@ -66,7 +66,17 @@ After spawning subagents, you:
    - Check if `<folder>/unityLibrary/src/main/Il2CppOutputProject/` exists (IL2CPP source present)
    - Grep `<folder>/unityLibrary/build.gradle` for `BuildIl2CppTask`
    - If `Il2CppOutputProject/` exists but `BuildIl2CppTask` is missing, append the `getSdkDir()`, `BuildIl2Cpp()`, and `BuildIl2CppTask` block from knowledge 1.4 to the end of `unityLibrary/build.gradle` (AFTER subagent B finishes)
-7. Create the new files based on knowledge:
+7. **Fix Android Studio "Before launch" build step** (knowledge 4.12):
+   - Read `<folder>/.idea/workspace.xml`
+   - Find the `<method v="2" />` tag inside the `<configuration name="launcher"` run config
+   - If it's empty (self-closing `<method v="2" />`), replace with:
+     ```xml
+     <method v="2">
+       <option name="Android.Gradle.BeforeRunTask" enabled="true" />
+     </method>
+     ```
+   - If it already contains `Android.Gradle.BeforeRunTask`, leave it alone
+8. Create the new files based on knowledge:
    - **Copy** `fix_elf_alignment.py` from `<project_root>/scripts/` to `<folder>/`
    - **Create** `<folder>/fix_16kb_alignment.gradle` — 16KB alignment Gradle task (knowledge 6.1)
    - **Create** `<folder>/unityLibrary/src/main/res/xml/provider_paths.xml` (knowledge 4.6)
@@ -81,7 +91,7 @@ As each subagent completes, **spot-check its work** — read key lines to confir
 | A | `org.gradle.java.home` present, `ndk.dir` present |
 | B | `VERSION_17`, `installreferrer:2.2`, `buildConfig = false` |
 | C | `apply from: '../fix_16kb_alignment.gradle'`, `VERSION_17`, `multiDexEnabled true` |
-| D | `removeAll` no xmlns, `AD_ID`, `MessagingUnityPlayerActivity` has `DEFAULT` not `LAUNCHER` |
+| D | `removeAll` line removed, `AD_ID` removed, `MessagingUnityPlayerActivity` has `DEFAULT` not `LAUNCHER`, no `android:label`/`android:icon` on `<application>` |
 | E | Activity declaration present, `tools:replace="android:hardwareAccelerated"`, `tools:replace="android:label"` on `<application>` |
 
 If a subagent missed something, fix it immediately. Don't wait for all subagents to verify — verify as they arrive.

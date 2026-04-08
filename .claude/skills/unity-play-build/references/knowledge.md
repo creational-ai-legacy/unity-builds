@@ -1,7 +1,7 @@
 # Android Studio Unity Export - Complete Fix Guide
 
 ## Quick Reference
-- **Total Fixes**: 26 comprehensive solutions
+- **Total Fixes**: 28 comprehensive solutions
 - **Key Files Modified**: 8+ files across build.gradle, AndroidManifest.xml, and properties
 - **Time to Fix**: ~45-60 minutes (including downloads)
 - **Target API**: 35 (Android 15) - Google Play compliant
@@ -35,13 +35,15 @@
    - [AD_ID Permission for Android 13+](#ad_id-permission-for-android-13) - Required for advertising
    - [Unity Activity Configuration](#unity-activity-configuration) - Missing Unity activity
    - [Firebase Manifest Conflicts](#firebase-manifest-conflicts) - Service exported conflicts
-   - [Manifest Property removeAll xmlns Conflict](#manifest-property-removeall-xmlns-conflict) - Redundant xmlns declaration
+   - [Manifest Property removeAll Line](#manifest-property-removeall-line) - Remove entire property line
    - [Legacy Support Library FileProvider Class](#legacy-support-library-fileprovider-class) - Runtime crash from old class
    - [Missing provider_paths.xml Resource](#missing-provider_pathsxml-resource) - FileProvider resource missing
    - [Launcher Activity hardwareAccelerated Conflict](#launcher-activity-hardwareaccelerated-conflict) - Manifest merger failure
    - [Launcher flatDir AAR Resolution](#launcher-flatdir-aar-resolution) - Cross-module AAR resolution
    - [Application Label Manifest Conflict](#application-label-manifest-conflict) - Plugin label conflicts
    - [Firebase MessagingUnityPlayerActivity Duplicate Launcher](#firebase-messagingunityplayeractivity-duplicate-launcher) - Duplicate app icon
+   - [UnityLibrary Application Tag Launcher-Only Resources](#unitylibrary-application-tag-launcher-only-resources) - APK build resource not found
+   - [Android Studio Empty "Before Launch" Build Step](#android-studio-empty-before-launch-build-step) - redirect.txt deploy error
 
 5. **[Build Optimization & Packaging](#5-build-optimization--packaging)**
    - [Resource Pattern Fix (APK/AAB Builds)](#resource-pattern-fix-apkaab-builds) - Malformed noCompress patterns
@@ -153,9 +155,11 @@ ndk.dir=/Users/[username]/Library/Android/sdk/ndk/27.0.12077973
 
 3. **Remove hardcoded NDK paths** from all build.gradle files:
 ```gradle
-// REMOVE these lines if present:
+// REMOVE these lines — do NOT replace with the SDK NDK path, just delete them:
 // ndkPath "/Applications/Unity/Hub/Editor/2022.3.62f1/PlaybackEngines/AndroidPlayer/NDK"
 ```
+
+⚠️ **CRITICAL: Remove `ndkPath`, do NOT replace it.** The NDK must be resolved solely via `ndk.dir` in `local.properties`. If `ndkPath` is present in `unityLibrary/build.gradle` (even pointing to the correct SDK NDK), it conflicts with `android.ndkDirectory` resolution and causes the IL2CPP build task to fail with "NDK is not installed". This happens because AGP's `ndkPath` and `ndk.dir` use different resolution paths internally — when both are set, `android.ndkDirectory` (used by the IL2CPP `BuildIl2CppTask`) may not resolve correctly.
 
 **Why Unity Version Matters**: Unity 2022.3 LTS IL2CPP specifically requires NDK 27.0.12077973. Stick with LTS versions for stability.
 
@@ -617,12 +621,18 @@ Unity exports this line WITHOUT the `tools:replace` attribute. You must ADD the 
 
 **Why This Happens**: Newer Firebase SDK has different exported service settings than Unity's bundled version, requiring explicit conflict resolution via `tools:replace`.
 
-### 4.4 Manifest Property removeAll xmlns Conflict
-**Problem**: Unity 2022.3.62f3 exports a `<property>` tag with a redundant `xmlns:tools` declaration that the manifest merger rejects
+### 4.4 Manifest Property removeAll Line
+**Problem**: Unity 2022.3.62f3 exports a `<property>` tag with `tools:node="removeAll"` that causes build failures in two ways:
+1. **AAB builds**: If the tag has a redundant `xmlns:tools`, the manifest merger rejects it ("cannot have other attributes")
+2. **APK builds**: AAPT2 rejects the `<property>` tag entirely — it requires `android:name` + `android:resource` or `android:value` attributes, and `tools:node="removeAll"` cannot coexist with those
 
-**Error Message**:
+**Error Messages**:
 ```
+# AAB manifest merger error (when xmlns:tools is present):
 Element property at AndroidManifest.xml annotated with 'tools:node="removeAll"' cannot have other attributes : xmlns:tools
+
+# APK AAPT2 error (even without xmlns:tools):
+AAPT: error: <property> is missing required attribute 'android:resource' or 'android:value'
 ```
 
 **File Fixed**: `unityLibrary/src/main/AndroidManifest.xml`
@@ -632,12 +642,18 @@ Element property at AndroidManifest.xml annotated with 'tools:node="removeAll"' 
 <property tools:node="removeAll" xmlns:tools="http://schemas.android.com/tools" />
 ```
 
-**Solution** — remove the redundant `xmlns:tools` (already declared on `<manifest>`):
+**Solution** — remove the entire `<property>` line:
 ```xml
-<property tools:node="removeAll" />
+<!-- DELETE this line entirely — do not keep it in any form -->
+<!-- <property tools:node="removeAll" ... /> -->
 ```
 
-**Why This Happens**: Unity duplicates the `xmlns:tools` namespace declaration on the `<property>` element. AGP 8.11+ manifest merger treats extra attributes on `tools:node="removeAll"` elements as errors.
+**Why This Happens**: Unity adds this line to strip `<property>` elements from merged manifests. AGP 8.11+ manifest merger rejects extra attributes on `tools:node="removeAll"`, and AAPT2 (used in APK builds) requires `<property>` to have `android:name` + `android:resource`/`android:value` which conflicts with `tools:node="removeAll"`. The safest fix is complete removal — the property stripping is not needed for correct builds.
+
+**Impact**:
+- **Critical for APK builds** — Blocks `assembleRelease` entirely
+- **Critical for AAB builds** — Blocks `bundleRelease` if xmlns:tools is present
+- First observed in Unity 2022.3.62f3 exports with AGP 8.11.1
 
 ### 4.5 Legacy Support Library FileProvider Class
 **Problem**: Unity exports reference old `android.support.v4.content.FileProvider` class which doesn't exist in AndroidX builds, causing a runtime crash on app startup
@@ -854,6 +870,72 @@ Then check if it has a LAUNCHER category:
 - **High** — Visible to all users, causes confusion
 - **Affects** — All Unity exports with Firebase Messaging plugin
 - **Device-confirmed** — Fix verified on physical device (2026-04-04)
+
+### 4.11 UnityLibrary Application Tag Launcher-Only Resources
+**Problem**: Unity exports the unityLibrary's `<application>` tag with `android:label="@string/app_name"` and `android:icon="@mipmap/app_icon"`, but these resources (`app_name`, `app_icon`) only exist in the launcher module. AAB builds tolerate this because manifest merger resolves resources across modules before AAPT2 validation. APK builds fail because AAPT2 validates each module independently.
+
+**Error Message**:
+```
+AAPT: error: resource mipmap/app_icon (aka com.unity3d.player:mipmap/app_icon) not found
+```
+
+**File Fixed**: `unityLibrary/src/main/AndroidManifest.xml`
+
+**What Unity exports (BROKEN for APK)**:
+```xml
+<application android:label="@string/app_name" android:icon="@mipmap/app_icon" 
+             android:enableOnBackInvokedCallback="true" android:extractNativeLibs="true">
+```
+
+**Solution** — remove `android:label` and `android:icon` from unityLibrary's `<application>` tag (the launcher module provides these via its own manifest):
+```xml
+<application android:enableOnBackInvokedCallback="true" android:extractNativeLibs="true">
+```
+
+**Why This Happens**: The launcher module's manifest declares `android:label` and `android:icon` with `tools:replace="android:label"` to override library values. In AAB builds, manifest merger combines all modules first, then AAPT2 validates the merged result — so cross-module resource references work. In APK builds, AAPT2 validates `unityLibrary` as an independent module before merging, and it can't find resources that only exist in `launcher/`. Removing these attributes from unityLibrary is safe because the launcher module already declares them.
+
+**Impact**:
+- **Critical for APK builds** — Blocks `assembleRelease` (device testing)
+- **No impact on AAB builds** — AAB merges before validation
+- First observed in Unity 2022.3.62f3 exports with AGP 8.11.1
+
+### 4.12 Android Studio Empty "Before Launch" Build Step
+**Problem**: Unity exports the `.idea/workspace.xml` run configuration with an empty `<method v="2" />` (no "Before launch" tasks). This means Android Studio skips building entirely when the user clicks Run — it tries to deploy a pre-built APK, can't find the redirect.txt artifact, and fails.
+
+**Error Message**:
+```
+Error loading build artifacts from: launcher/build/intermediates/apk_ide_redirect_file/release/createReleaseApkListingFileRedirect/redirect.txt
+```
+
+**File Fixed**: `.idea/workspace.xml` (via Android Studio UI)
+
+**What Unity exports (BROKEN — no build before deploy)**:
+```xml
+<method v="2" />
+```
+
+**What it should be (triggers build before deploy)**:
+```xml
+<method v="2">
+  <option name="Android.Gradle.BeforeRunTask" enabled="true" />
+</method>
+```
+
+**Solution** — fix via the Android Studio UI (editing the XML directly doesn't work while AS is running because it caches the config in memory):
+
+1. Click the **Run Configuration dropdown** (next to the Play button) → **Edit Configurations**
+2. Select the **"launcher"** configuration on the left
+3. Scroll to the **"Before launch"** section at the bottom
+4. Click the **+** button → select **"Gradle-aware Make"** → leave the task field empty → click **OK**
+5. If "Gradle-aware Make" is already there but broken: remove it with **-**, then re-add it with **+**
+6. Click **Apply** then **OK**
+
+**Why This Happens**: Unity's Android export generates the Android Studio project configuration without a "Before launch" build step. In a normal Android project, this step is present by default — it tells AS to run `assembleRelease` (or `assembleDebug`) before deploying to a device. Without it, AS skips the build and looks for a pre-existing APK via `redirect.txt`, which doesn't exist after a clean or fresh project open. This is consistent with a known AS bug ([#376707217](https://issuetracker.google.com/issues/376707217)).
+
+**Impact**:
+- **Critical for device testing** — Cannot deploy to device from Android Studio
+- **Persists after clean/sync** — Any Gradle clean or sync wipes the APK artifacts, and AS won't rebuild them without this fix
+- **One-time fix per project** — Once set via AS UI, the setting persists in workspace.xml
 
 ## 5. Build Optimization & Packaging
 
